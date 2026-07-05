@@ -1,0 +1,37 @@
+# Secrets / credentials
+.env
+client_secrets.json
+token.json
+*-oauth2.json
+STORAGE-oauth2.json
+*.bak
+cookies/
+
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Local config & browser profile
+config.toml
+playwright_profile/
+
+# Databases (your private upload history)
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs & debug artifacts
+*.log
+debug_screenshots/
+
+# Pre-rewrite experiments, superseded by ytuploader/ - kept on disk for
+# reference (and, for final/, because it holds the live DB) but not worth
+# tracking. legacy/ also contains a vendored third-party clone with its own
+# .git, which would otherwise commit as a broken embedded-repo reference.
+legacy/
+final/
+
+.ipynb_checkpoints/

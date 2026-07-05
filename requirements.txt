@@ -1,0 +1,12 @@
+# Core
+playwright>=1.49          # robust browser automation for the actual upload
+google-api-python-client>=2.150  # YouTube Data API (playlists only - cheap quota)
+google-auth-oauthlib>=1.2        # modern OAuth (replaces deprecated oauth2client)
+SQLAlchemy>=2.0           # local tracking DB
+python-dotenv>=1.0        # load secrets from .env
+
+# Notes:
+#   This setup drives your *installed* Google Chrome via Playwright's `channel`
+#   option (config.toml -> [upload].browser_channel = 'chrome'), so you do NOT
+#   need `playwright install`. The bundled Playwright browsers fail to launch on
+#   this machine (Windows side-by-side / WinSxS error); the system browser works.

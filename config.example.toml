@@ -1,0 +1,64 @@
+# ytuploader configuration.
+# Copy this file to `config.toml` and edit the values for your machine.
+# Secrets (passwords) do NOT go here - they live in `.env`.
+
+[paths]
+# Folder that holds one subfolder per game/app, each full of .mp4 captures.
+captures_folder = 'D:\Videos\Captures'
+
+# SQLite tracking DB. This is your existing upload history - keep pointing at it
+# so already-uploaded videos are never re-uploaded.
+db_path = 'final/video_db_2.db'
+
+# Dedicated browser profile directory for Playwright. Created automatically.
+# Keep this separate from your normal Firefox profile. You log in to YouTube
+# once inside this profile (via `python -m ytuploader login`) and the cookies
+# persist here for all future runs.
+browser_profile_dir = 'playwright_profile'
+
+# OAuth client secrets downloaded from Google Cloud Console (YouTube Data API).
+client_secrets_file = 'client_secrets.json'
+
+# Where the OAuth token is cached after the first browser consent.
+token_file = 'token.json'
+
+[scan]
+# Subfolders to skip when scanning. These are AMD Adrenalin's cache/temp folders
+# (post NVIDIA->AMD switch) - without this they'd each become a junk playlist.
+# Folders named like a GUID ("{....}") and "temp" are always skipped too.
+ignore_folders = ['replay_cache', 'gif_replay_cache', 'InGame_replay_cache', 'thumb_cache']
+
+[upload]
+# Prefix for the auto-created YouTube playlist per capture folder.
+playlist_prefix = 'CAPTURES - '
+
+# Default visibility for uploaded videos: 'private', 'unlisted' or 'public'.
+visibility = 'private'
+
+# Which installed browser Playwright drives: 'chrome' or 'msedge'. We use a
+# system browser (not Playwright's bundled one) because the bundled builds fail
+# to launch on this machine with a Windows side-by-side error.
+browser_channel = 'chrome'
+
+# Run the browser without a visible window. Set false to watch / debug.
+headless = true
+
+# Stop the run after this many successful uploads (0 = no cap; YouTube's own
+# daily limit will stop the run anyway).
+max_uploads_per_run = 0
+
+# Upload smallest-backlog folders first (mirrors the old behaviour), or 'name',
+# or 'random'.
+order = 'fewest_remaining'
+
+[notify]
+# Send an email summary when a run finishes. Requires GMAIL_APP_PASSWORD in .env.
+enabled = false
+smtp_host = 'smtp.gmail.com'
+smtp_port = 587
+from_addr = 'you@example.com'
+to_addr = 'you@example.com'
+
+[power]
+# Shut down the PC when a run finishes (was the old default - off now).
+shutdown_when_done = false
