@@ -23,8 +23,10 @@ from playwright.sync_api import (
     sync_playwright,
 )
 
+from .config import PROJECT_ROOT
+
 UPLOAD_URL = "https://www.youtube.com/upload"
-DEBUG_DIR = Path(__file__).resolve().parent.parent / "debug_screenshots"
+DEBUG_DIR = PROJECT_ROOT / "debug_screenshots"
 
 # --- Centralised selectors. Update HERE when Studio's UI changes. -----------
 SEL = {

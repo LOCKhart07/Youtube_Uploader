@@ -5,6 +5,10 @@ google-auth-oauthlib>=1.2        # modern OAuth (replaces deprecated oauth2clien
 SQLAlchemy>=2.0           # local tracking DB
 python-dotenv>=1.0        # load secrets from .env
 
+# Desktop app + exe build
+PySide6>=6.10             # the GUI (window, tray icon, notifications)
+pyinstaller>=6.16         # packs it into ytuploader.exe (build_exe.ps1)
+
 # Notes:
 #   This setup drives your *installed* Google Chrome via Playwright's `channel`
 #   option (config.toml -> [upload].browser_channel = 'chrome'), so you do NOT

@@ -1,12 +1,15 @@
 """Load settings from config.toml + secrets from .env.
 
 Paths in the TOML may be relative; they are resolved against the project root
-(the folder containing config.toml).
+(the folder containing config.toml). In the packaged .exe that root is the
+folder the .exe sits in.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,7 +21,16 @@ except ImportError:  # dotenv is optional; only needed for email notifications
         return False
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+def _project_root() -> Path:
+    if getattr(sys, "frozen", False):  # PyInstaller .exe
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _project_root()
+# Read-only files shipped with the app (config.example.toml). The one-file exe
+# unpacks them to a temp dir exposed as sys._MEIPASS.
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
 
 
 def _resolve(p: str | os.PathLike) -> Path:
@@ -63,20 +75,42 @@ class Config:
         return f"sqlite:///{self.db_path.as_posix()}"
 
 
-def load_config(path: str | os.PathLike = "config.toml") -> Config:
-    """Read config.toml (falling back to config.example.toml) and .env."""
-    load_dotenv(PROJECT_ROOT / ".env")
+def config_path(path: str | os.PathLike = "config.toml") -> Path:
+    return _resolve(path)
 
+
+def example_config_path() -> Path:
+    local = PROJECT_ROOT / "config.example.toml"
+    return local if local.exists() else BUNDLE_ROOT / "config.example.toml"
+
+
+def read_raw_config(path: str | os.PathLike = "config.toml") -> tuple[dict, bool]:
+    """Return (toml_data, exists). Falls back to the example's values when
+    config.toml doesn't exist yet, so the app can offer to create it."""
+    config_file = _resolve(path)
+    source = config_file if config_file.exists() else example_config_path()
+    if not source.exists():
+        return {}, False
+    with open(source, "rb") as fh:
+        return tomllib.load(fh), config_file.exists()
+
+
+def load_config(path: str | os.PathLike = "config.toml") -> Config:
+    """Read config.toml and .env."""
     config_path = _resolve(path)
     if not config_path.exists():
-        example = PROJECT_ROOT / "config.example.toml"
         raise FileNotFoundError(
             f"Config not found at {config_path}.\n"
-            f"Copy {example.name} to config.toml and edit it for your machine."
+            f"Copy config.example.toml to config.toml and edit it for your machine."
         )
 
     with open(config_path, "rb") as fh:
-        data = tomllib.load(fh)
+        return config_from_dict(tomllib.load(fh))
+
+
+def config_from_dict(data: dict) -> Config:
+    """Validate parsed TOML and build a Config (secrets come from .env)."""
+    load_dotenv(PROJECT_ROOT / ".env")
 
     paths = data.get("paths", {})
     scan = data.get("scan", {})
@@ -122,3 +156,48 @@ def load_config(path: str | os.PathLike = "config.toml") -> Config:
         ),
         shutdown_when_done=bool(power.get("shutdown_when_done", False)),
     )
+
+
+# ------------------------------------------------------------------ writing
+
+_SECTION_ORDER = ("paths", "scan", "upload", "notify", "power")
+
+
+def _toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    text = str(value)
+    if "'" not in text and "\n" not in text:
+        return f"'{text}'"  # literal string: Windows backslashes stay as-is
+    return json.dumps(text)  # JSON escapes are valid TOML basic-string escapes
+
+
+def write_config(data: dict, path: str | os.PathLike = "config.toml") -> Path:
+    """Validate and write `data` (same shape as the parsed TOML) to config.toml.
+
+    Comments in an existing file are not preserved - config.example.toml keeps
+    the documented version of every setting.
+    """
+    config_from_dict(data)  # raise before touching the file if it's invalid
+
+    lines = [
+        "# ytuploader configuration - written by the ytuploader app.",
+        "# See config.example.toml for what each setting does.",
+    ]
+    sections = list(_SECTION_ORDER) + [k for k in data if k not in _SECTION_ORDER]
+    for section in sections:
+        values = data.get(section)
+        if not isinstance(values, dict):
+            continue
+        lines.append("")
+        lines.append(f"[{section}]")
+        for key, value in values.items():
+            lines.append(f"{key} = {_toml_value(value)}")
+
+    config_file = _resolve(path)
+    config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return config_file

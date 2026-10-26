@@ -67,7 +67,7 @@ def _is_ignored_dir(name: str, ignore: set[str]) -> bool:
     return name in ignore or bool(_GUID_RE.match(name)) or name == "temp"
 
 
-def scan(config: Config, db: Database) -> tuple[int, int, int]:
+def scan(config: Config, db: Database, log=print) -> tuple[int, int, int]:
     """Walk the captures tree, inserting any new folders/videos.
 
     Also drops pending rows whose file no longer exists on disk - this
@@ -121,8 +121,8 @@ def scan(config: Config, db: Database) -> tuple[int, int, int]:
                 new_videos += 1
 
     if skipped_folders:
-        print(f"Skipped {len(skipped_folders)} cache/system folders: "
-              f"{', '.join(sorted(skipped_folders))}")
+        log(f"Skipped {len(skipped_folders)} cache/system folders: "
+            f"{', '.join(sorted(skipped_folders))}")
 
     removed_orphans = db.remove_orphaned_pending()
 

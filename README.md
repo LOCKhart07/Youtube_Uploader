@@ -49,7 +49,24 @@ python -m ytuploader auth      # opens a browser — grant API access (playlists
 (`playwright_profile/`). `auth` caches an API token in `token.json`. Both
 persist, so you only do this once.
 
-## Daily use
+## Desktop app
+
+`ytuploader.exe` is the same uploader with a window and a tray icon: a
+dashboard of per-game progress, Scan / Upload / Stop buttons with a live log,
+one-click Setup (YouTube login, OAuth client, API authorisation) and a
+Settings form that writes `config.toml`. Closing the window keeps it in the
+tray; quit from the tray menu. `--minimized` starts it straight in the tray.
+
+Build it (output is copied next to `config.toml`, which is where the exe looks
+for its config, DB and tokens):
+
+```powershell
+.\build_exe.ps1
+```
+
+Or run it from source without building: `python -m ytuploader gui`.
+
+## Daily use (CLI)
 
 ```bash
 python -m ytuploader scan      # pick up new clips from the Captures folder

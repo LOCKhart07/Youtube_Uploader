@@ -18,6 +18,10 @@ playwright_profile/
 *.db
 
 # Python
+build/
+dist/
+*.spec
+/ytuploader.exe
 __pycache__/
 *.pyc
 .venv/
