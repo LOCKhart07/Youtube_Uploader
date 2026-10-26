@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import autostart
 from ..config import Config, config_from_dict, PROJECT_ROOT
 from ..db import Database
 from ..service import SetupState
@@ -337,7 +338,7 @@ class SetupPage(QWidget):
         layout.addWidget(self.auth)
 
         folder = QHBoxLayout()
-        folder.addWidget(QLabel(f"App folder: {PROJECT_ROOT}"))
+        folder.addWidget(QLabel(f"Data folder: {PROJECT_ROOT}"))
         open_btn = QPushButton("Open folder")
         open_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PROJECT_ROOT)))
@@ -493,6 +494,16 @@ class SettingsPage(QWidget):
                             "never here."))
         f.addRow("", self.shutdown)
         form_layout.addWidget(box)
+
+        # Windows
+        self.autostart = QCheckBox("Start with Windows (minimised to the tray)")
+        box = QGroupBox("Windows")
+        f = QFormLayout(box)
+        f.addRow("", self.autostart)
+        if not autostart.supported():
+            self.autostart.setEnabled(False)
+            f.addRow("", _muted("Available in the installed ytuploader.exe."))
+        form_layout.addWidget(box)
         form_layout.addStretch()
 
         buttons = QHBoxLayout()
@@ -536,6 +547,7 @@ class SettingsPage(QWidget):
         self.from_addr.setText(notify.get("from_addr", ""))
         self.to_addr.setText(notify.get("to_addr", ""))
         self.shutdown.setChecked(bool(power.get("shutdown_when_done", False)))
+        self.autostart.setChecked(autostart.is_enabled())
 
     def collect(self) -> dict:
         # Start from what was loaded so keys this form doesn't know survive a save.

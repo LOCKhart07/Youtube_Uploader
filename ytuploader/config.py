@@ -1,8 +1,15 @@
 """Load settings from config.toml + secrets from .env.
 
-Paths in the TOML may be relative; they are resolved against the project root
-(the folder containing config.toml). In the packaged .exe that root is the
-folder the .exe sits in.
+Paths in the TOML may be relative; they are resolved against the data folder
+(the folder containing config.toml), `PROJECT_ROOT`:
+
+* from source: the repository root;
+* portable .exe: the folder the .exe sits in, when a `config.toml` or a
+  `portable` marker file is next to it;
+* installed .exe: a per-user folder, %LOCALAPPDATA%/ytuploader (the install
+  folder isn't meant to be written to).
+
+The YTUPLOADER_HOME environment variable overrides all of these.
 """
 
 from __future__ import annotations
@@ -21,16 +28,35 @@ except ImportError:  # dotenv is optional; only needed for email notifications
         return False
 
 
-def _project_root() -> Path:
-    if getattr(sys, "frozen", False):  # PyInstaller .exe
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
+FROZEN = bool(getattr(sys, "frozen", False))  # running as the PyInstaller .exe
+# Where the program itself lives: the .exe's folder, or the repository root.
+APP_DIR = (Path(sys.executable).resolve().parent if FROZEN
+           else Path(__file__).resolve().parent.parent)
 
 
-PROJECT_ROOT = _project_root()
-# Read-only files shipped with the app (config.example.toml). The one-file exe
-# unpacks them to a temp dir exposed as sys._MEIPASS.
-BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
+def user_data_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+    return Path(base) / "ytuploader"
+
+
+def _data_root() -> tuple[Path, bool]:
+    """Return (data folder, is_portable)."""
+    override = os.environ.get("YTUPLOADER_HOME")
+    if override:
+        return Path(override).expanduser().resolve(), False
+    if not FROZEN:
+        return APP_DIR, True
+    if (APP_DIR / "config.toml").exists() or (APP_DIR / "portable").exists():
+        return APP_DIR, True
+    return user_data_dir(), False
+
+
+PROJECT_ROOT, PORTABLE = _data_root()
+PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
+# Read-only files shipped with the app (config.example.toml). PyInstaller
+# exposes its bundle dir (temp dir for one-file, _internal for one-folder) as
+# sys._MEIPASS.
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", APP_DIR))
 
 
 def _resolve(p: str | os.PathLike) -> Path:
@@ -80,8 +106,10 @@ def config_path(path: str | os.PathLike = "config.toml") -> Path:
 
 
 def example_config_path() -> Path:
-    local = PROJECT_ROOT / "config.example.toml"
-    return local if local.exists() else BUNDLE_ROOT / "config.example.toml"
+    for folder in (PROJECT_ROOT, APP_DIR, BUNDLE_ROOT):
+        if (folder / "config.example.toml").exists():
+            return folder / "config.example.toml"
+    return BUNDLE_ROOT / "config.example.toml"
 
 
 def read_raw_config(path: str | os.PathLike = "config.toml") -> tuple[dict, bool]:
@@ -135,7 +163,7 @@ def config_from_dict(data: dict) -> Config:
 
     return Config(
         captures_folder=_resolve(paths.get("captures_folder", "captures")),
-        db_path=_resolve(paths.get("db_path", "video_db_2.db")),
+        db_path=_resolve(paths.get("db_path", "uploads.db")),
         browser_profile_dir=_resolve(paths.get("browser_profile_dir", "playwright_profile")),
         client_secrets_file=_resolve(paths.get("client_secrets_file", "client_secrets.json")),
         token_file=_resolve(paths.get("token_file", "token.json")),

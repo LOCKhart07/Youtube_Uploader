@@ -14,12 +14,14 @@ import os
 import shutil
 import sys
 import threading
+from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -27,8 +29,16 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
-from .. import __version__, service
-from ..config import Config, config_path, load_config, read_raw_config, write_config
+from .. import __version__, autostart, migrate, service
+from ..config import (
+    PORTABLE,
+    PROJECT_ROOT,
+    Config,
+    config_path,
+    load_config,
+    read_raw_config,
+    write_config,
+)
 from .icon import app_icon
 from .pages import DashboardPage, SettingsPage, SetupPage, UploadPage
 from .workers import QtEvents, Task
@@ -75,6 +85,10 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("Scan + upload now", self.do_run)
+        file_menu.addSeparator()
+        file_menu.addAction("Import data from another folder...",
+                            lambda: self.offer_import(first_run=False))
+        file_menu.addAction("Open data folder", lambda: os.startfile(PROJECT_ROOT))
         file_menu.addSeparator()
         file_menu.addAction("Hide to tray", self.hide)
         quit_action = QAction("Quit", self)
@@ -171,6 +185,73 @@ class MainWindow(QMainWindow):
             return
         self.reload_config()
         self.statusBar().showMessage(f"Saved {path}", 5000)
+        self._apply_autostart(self.settings.autostart.isChecked())
+
+    def _apply_autostart(self, enabled: bool) -> None:
+        if not autostart.supported():
+            return
+        wanted = autostart.command() if enabled else None
+        if autostart.current() == wanted:
+            return
+        try:
+            autostart.set_enabled(enabled)
+        except OSError as e:
+            QMessageBox.warning(self, "Start with Windows", f"Couldn't update the registry: {e}")
+        self.settings.autostart.setChecked(autostart.is_enabled())
+
+    def first_run_check(self) -> None:
+        """Installed build, empty data folder: offer to bring the old data over."""
+        if not PORTABLE and not config_path(self.config_arg).exists():
+            self.show_window()
+            self.offer_import(first_run=True)
+
+    def offer_import(self, first_run: bool) -> None:
+        if self.busy:
+            self.notify(APP_NAME, f"Busy: {self.task.name}. Try again when it finishes.")
+            return
+        if first_run:
+            box = QMessageBox(self)
+            box.setWindowTitle(APP_NAME)
+            box.setIcon(QMessageBox.Question)
+            box.setText("Welcome! Import your existing ytuploader data?")
+            box.setInformativeText(
+                "If you used ytuploader before (from the project folder or the portable "
+                "exe), choose that folder - the one with config.toml - to copy your "
+                "upload history, settings, YouTube login and API token into "
+                f"{PROJECT_ROOT}.\n\nThe original folder is left untouched."
+            )
+            choose = box.addButton("Choose folder...", QMessageBox.AcceptRole)
+            box.addButton("Start fresh", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is not choose:
+                return
+        elif config_path(self.config_arg).exists():
+            answer = QMessageBox.question(
+                self, "Import data",
+                "This replaces the current settings (they're kept as config.toml.bak). "
+                "Your current upload-history DB is not overwritten. Continue?",
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+        folder = QFileDialog.getExistingDirectory(self, "Folder that contains config.toml")
+        if not folder:
+            return
+        if not migrate.looks_like_data_folder(Path(folder)):
+            QMessageBox.warning(self, "Nothing to import", f"There's no config.toml in {folder}.")
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            report = migrate.import_folder(folder)
+        except Exception as e:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Import failed", str(e))
+            return
+        QApplication.restoreOverrideCursor()
+        self.upload.append(report.summary())
+        self.reload_config()
+        self.tabs.setCurrentWidget(self.dashboard)
+        QMessageBox.information(self, "Import done", report.summary())
 
     def install_client_secrets(self, source: str) -> None:
         if not self._require_config():
@@ -376,10 +457,15 @@ def main(argv: list[str] | None = None) -> int:
     if _hand_off_to_running_instance():
         return 0
 
+    if sys.platform == "win32":
+        # Lets the installer/uninstaller detect a running app (Inno's AppMutex).
+        _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "ytuploader-app")  # noqa: F841
+
     window = MainWindow(args.config)
     _server = _listen_for_other_instances(window)  # noqa: F841 - keep alive
     if not args.minimized:
         window.show()
+    QTimer.singleShot(0, window.first_run_check)
 
     code = app.exec()
     if window.task is not None and window.task.isRunning():

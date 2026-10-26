@@ -6,9 +6,9 @@
 # Folder that holds one subfolder per game/app, each full of .mp4 captures.
 captures_folder = 'D:\Videos\Captures'
 
-# SQLite tracking DB. This is your existing upload history - keep pointing at it
-# so already-uploaded videos are never re-uploaded.
-db_path = 'final/video_db_2.db'
+# SQLite tracking DB (your upload history). Keep pointing at the same file so
+# already-uploaded videos are never re-uploaded.
+db_path = 'uploads.db'
 
 # Dedicated browser profile directory for Playwright. Created automatically.
 # Keep this separate from your normal Firefox profile. You log in to YouTube

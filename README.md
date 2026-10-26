@@ -57,14 +57,52 @@ one-click Setup (YouTube login, OAuth client, API authorisation) and a
 Settings form that writes `config.toml`. Closing the window keeps it in the
 tray; quit from the tray menu. `--minimized` starts it straight in the tray.
 
-Build it (output is copied next to `config.toml`, which is where the exe looks
-for its config, DB and tokens):
+### Installing
+
+Build the installer (needs Inno Setup 6 once: `winget install JRSoftware.InnoSetup`):
 
 ```powershell
-.\build_exe.ps1
+.\build_installer.ps1
 ```
 
-Or run it from source without building: `python -m ytuploader gui`.
+This makes a one-folder PyInstaller build (starts instantly) and packages it as
+`dist\ytuploader-setup-<version>.exe` (version from `ytuploader.__version__`).
+The installer is per-user, needs no admin rights, and installs to
+`%LOCALAPPDATA%\Programs\ytuploader` with a Start-menu shortcut, an optional
+desktop shortcut and an optional **Start with Windows** entry. Uninstall from
+Settings → Apps; it asks before deleting your data (default: keep it).
+
+### Where the data lives
+
+- **Installed app:** `%LOCALAPPDATA%\ytuploader` — `config.toml`, the history DB
+  (`uploads.db`), `token.json`, `client_secrets.json`, `.env` and
+  `playwright_profile\`. File → *Open data folder* opens it.
+- **Portable exe:** if a `config.toml` (or an empty file named `portable`) sits
+  next to `ytuploader.exe`, it uses that folder instead. `.\build_exe.ps1`
+  builds that single-file exe and copies it here, next to this repo's config.
+- **From source** (`python -m ytuploader ...`): the repo folder.
+- `YTUPLOADER_HOME=<folder>` overrides all of the above.
+
+On first start with an empty data folder, the installed app offers to **import**
+an existing folder (the one with `config.toml`, e.g. this repo): it copies the
+settings, history DB (renamed to `uploads.db`), tokens, `.env` and the browser
+profile (minus Chrome's caches), and rewrites the paths. The source folder is
+never changed, and an existing DB is never overwritten — a second import gets a
+new `uploads-imported-<time>.db`. Run it again any time from File → *Import data
+from another folder*, or from the CLI: `python -m ytuploader import <folder>`.
+
+The installed and portable apps share one single-instance lock: if one is
+running, launching the other just brings the running one to the front.
+
+### Start with Windows
+
+Settings → Windows → *Start with Windows* (applied on Save) adds or removes
+`ytuploader.exe --minimized` under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The installer's option
+writes the same value; uninstalling removes it. Only the packaged exe can
+register itself, not a source checkout.
+
+Run it from source without building: `python -m ytuploader gui`.
 
 ## Daily use (CLI)
 
@@ -86,7 +124,8 @@ All settings live in `config.toml` (see `config.example.toml` for the full,
 commented list). Highlights:
 
 - `paths.captures_folder` — your `D:\Videos\Captures` root.
-- `paths.db_path` — defaults to `final/video_db_2.db`, your existing history.
+- `paths.db_path` — the upload history DB (`uploads.db` for new setups; this
+  repo's own config still points at `final/video_db_2.db`).
 - `upload.visibility` — `private` / `unlisted` / `public`.
 - `upload.headless` — set `false` to watch the browser while debugging.
 - `upload.max_uploads_per_run` — cap a session (0 = no cap).
@@ -136,7 +175,14 @@ ytuploader/
   youtube_api.py   playlists / playlistItems (cheap API)
   uploader.py      Playwright upload (the robust core)
   notify.py        optional email summary
+  migrate.py       import an old data folder into the app's data folder
+  autostart.py     Start with Windows (HKCU Run entry)
+  service.py       workflows shared by the CLI and the desktop app
   cli.py           command line orchestration
+  gui/             PySide6 desktop app (tray, dashboard, settings)
+packaging/
+  ytuploader_app.py  PyInstaller entry point
+  installer.iss      Inno Setup script
 ```
 
 The original scripts (`final/`, `main.py`, `selenium_wala.py`, …) are left in

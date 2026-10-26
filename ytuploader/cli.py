@@ -8,6 +8,7 @@
     python -m ytuploader upload     upload pending videos (Ctrl+C to stop cleanly)
     python -m ytuploader run        scan + playlists + upload, all in one
     python -m ytuploader gui        open the desktop app (same as ytuploader.exe)
+    python -m ytuploader import DIR copy config/history/tokens/profile from DIR
 """
 
 from __future__ import annotations
@@ -82,8 +83,15 @@ def main(argv: list[str] | None = None) -> int:
 
     for name in ("login", "auth", "scan", "playlists", "status", "upload", "run", "gui"):
         sub.add_parser(name)
+    imp = sub.add_parser("import", help="copy config/history/tokens from another folder")
+    imp.add_argument("folder", help="folder that contains the old config.toml")
 
     args = parser.parse_args(argv)
+
+    if args.command == "import":
+        from .migrate import import_folder
+        print(import_folder(args.folder).summary())
+        return 0
 
     if args.command == "gui":
         from .gui.app import main as gui_main
