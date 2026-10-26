@@ -23,9 +23,9 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
@@ -64,7 +64,7 @@ jobs:
           Copy-Item dist\ytuploader.exe "out\ytuploader-$v.exe"
           Get-ChildItem out | Format-Table Name, Length
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ytuploader-${{ steps.version.outputs.version }}
           path: out/*.exe

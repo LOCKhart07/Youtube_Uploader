@@ -3,9 +3,28 @@
 Upload game-capture clips from a `Captures` folder to YouTube, one playlist per
 game, without re-uploading anything you've already done.
 
-This is a modernised rewrite of the original project. The painful parts —
-the YouTube API's 1600-unit-per-upload quota, the abandoned `selenium_youtube`
-library, hardcoded paths and a Gmail password sitting in source — are gone.
+Windows desktop app (tray icon, dashboard, scheduled uploads) plus a CLI.
+
+## Quick start
+
+1. Download `ytuploader-setup-<version>.exe` from the
+   [latest release](../../releases/latest) and run it. It installs per-user, no
+   admin needed. Windows SmartScreen may warn because the installer isn't
+   code-signed: *More info → Run anyway*. Releases are built by GitHub Actions
+   from this repository.
+2. Open **Settings**, set your captures folder (one subfolder per game) and Save.
+3. Open **Setup** and do the three steps: log in to YouTube in the app's own
+   browser window, choose your OAuth client file (see below) and authorise the
+   API.
+4. Click **Scan + upload now**, or turn on automatic uploads in Settings.
+
+**OAuth client:** playlists are managed through the YouTube Data API, so you
+need your own *Desktop app* OAuth client: Google Cloud Console → enable the
+*YouTube Data API v3* → APIs & Services → Credentials → Create OAuth client ID →
+*Desktop app* → download the JSON. Without it clips still upload, they just
+aren't added to playlists. If your Cloud project's consent screen is in
+*Testing*, add your Google account as a test user; tokens then expire after 7
+days, so publish the app (In production) to stop re-authorising every week.
 
 ## How it works
 
@@ -13,13 +32,13 @@ library, hardcoded paths and a Gmail password sitting in source — are gone.
 | --- | --- | --- |
 | Upload the video file + title/description/tags | **Playwright** (browser) | No API quota; `videos.insert` would cost 1600 units (~6/day). |
 | Create playlists & add the video to one | **YouTube Data API** | Cheap (50 units each → ~200/day, well above YouTube's daily upload ceiling). |
-| Remember what's uploaded | **SQLite** | Nothing gets uploaded twice. Your existing history is reused as-is. |
+| Remember what's uploaded | **SQLite** | Nothing gets uploaded twice. |
 
-The old code clicked through Studio's flaky playlist dropdown. We skip that:
-the browser does the upload and hands back the video id, then the API drops the
-video into the right playlist. Far less to break.
+Studio's playlist dropdown is flaky to automate, so it's skipped: the browser
+does the upload and hands back the video id, then the API drops the video into
+the right playlist. Far less to break.
 
-## One-time setup
+## Running from source
 
 ```bash
 python -m venv .venv
@@ -32,11 +51,11 @@ copy .env.example .env                     # only needed for email summaries
 
 > **Browser:** this setup drives your installed **Google Chrome** via Playwright's
 > `channel` option (`[upload].browser_channel` in `config.toml`), so there's no
-> `playwright install` step. Playwright's own bundled browsers fail to launch on
-> this machine with a Windows side-by-side (WinSxS) error; the system browser
+> `playwright install` step. Playwright's own bundled browsers can fail to
+> launch on Windows with a side-by-side (WinSxS) error; the system browser
 > sidesteps that. Switch to `'msedge'` if you prefer Edge.
 
-Edit `config.toml` — at minimum `captures_folder` and `db_path`.
+Edit `config.toml`, at minimum `captures_folder`.
 
 Then authorise both halves once:
 
@@ -86,7 +105,7 @@ which leaves the files as a workflow artifact.
   `playwright_profile\`. File → *Open data folder* opens it.
 - **Portable exe:** if a `config.toml` (or an empty file named `portable`) sits
   next to `ytuploader.exe`, it uses that folder instead. `.\build_exe.ps1`
-  builds that single-file exe and copies it here, next to this repo's config.
+  builds that single-file exe and copies it to the repo folder.
 - **From source** (`python -m ytuploader ...`): the repo folder.
 - `YTUPLOADER_HOME=<folder>` overrides all of the above.
 
@@ -147,9 +166,8 @@ down when done — both off by default, see `config.toml`.
 All settings live in `config.toml` (see `config.example.toml` for the full,
 commented list). Highlights:
 
-- `paths.captures_folder` — your `D:\Videos\Captures` root.
-- `paths.db_path` — the upload history DB (`uploads.db` for new setups; this
-  repo's own config still points at `final/video_db_2.db`).
+- `paths.captures_folder` — the folder with one subfolder per game.
+- `paths.db_path` — the upload history DB (`uploads.db`).
 - `upload.visibility` — `private` / `unlisted` / `public`.
 - `upload.headless` — set `false` to watch the browser while debugging.
 - `upload.max_uploads_per_run` — cap a session (0 = no cap).
@@ -183,12 +201,6 @@ place — the `SEL` dict at the top of `ytuploader/uploader.py`. On any failure 
 screenshot is saved to `debug_screenshots/` so you can see what the page looked
 like and fix the selector.
 
-## ⚠️ Security note
-
-The old `final/main.py` / `final/multi.py` had a Gmail **app password committed
-in plain text**. Revoke it at <https://myaccount.google.com/apppasswords> and
-generate a fresh one for `.env` if you want email summaries.
-
 ## Layout
 
 ```
@@ -210,5 +222,6 @@ packaging/
   installer.iss      Inno Setup script
 ```
 
-The original scripts (`final/`, `main.py`, `selenium_wala.py`, …) are left in
-place for reference but are no longer used.
+## License
+
+MIT, see [LICENSE](LICENSE).
