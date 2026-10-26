@@ -11,7 +11,7 @@ import html
 import re
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QTime, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextBrowser,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -52,6 +53,13 @@ def _heading(text: str) -> QLabel:
     font.setBold(True)
     label.setFont(font)
     return label
+
+
+def _qtime(value, default: str) -> QTime:
+    """'HH:MM' (or a TOML time) from config.toml as a QTime."""
+    text = str(value if value is not None else default)[:5]
+    t = QTime.fromString(text, "HH:mm")
+    return t if t.isValid() else QTime.fromString(default, "HH:mm")
 
 
 def _muted(text: str) -> QLabel:
@@ -475,6 +483,37 @@ class SettingsPage(QWidget):
         f.addRow("Skip folders (comma separated)", self.ignore)
         form_layout.addWidget(box)
 
+        # Schedule
+        self.auto_mode = QComboBox()
+        self.auto_mode.addItem("Off", "off")
+        self.auto_mode.addItem("Once a day", "daily")
+        self.auto_mode.addItem("Every few hours", "interval")
+        self.auto_time = QTimeEdit()
+        self.auto_time.setDisplayFormat("HH:mm")
+        self.auto_hours = QSpinBox()
+        self.auto_hours.setRange(1, 168)
+        self.auto_hours.setSuffix(" h")
+        self.remind = QCheckBox("Remind me when clips are waiting to upload")
+        self.remind_time = QTimeEdit()
+        self.remind_time.setDisplayFormat("HH:mm")
+        self.remind_min = QSpinBox()
+        self.remind_min.setRange(1, 10_000)
+        self.remind_min.setSuffix(" clips")
+        box = QGroupBox("Automatic uploads and reminders")
+        f = QFormLayout(box)
+        f.addRow("Scan + upload", self.auto_mode)
+        f.addRow("At", self.auto_time)
+        f.addRow("Every", self.auto_hours)
+        f.addRow("", self.remind)
+        f.addRow("Remind at", self.remind_time)
+        f.addRow("Only if at least", self.remind_min)
+        f.addRow("", _muted("Runs while the app is open or in the tray - turn on Start with "
+                            "Windows below. A time missed while the PC was off is caught "
+                            "up once when the app next runs."))
+        self.auto_mode.currentIndexChanged.connect(self._sync_schedule)
+        self.remind.toggled.connect(self._sync_schedule)
+        form_layout.addWidget(box)
+
         # Notify / power
         self.notify = QCheckBox("Email a summary when a run finishes")
         self.smtp_host = QLineEdit()
@@ -549,6 +588,23 @@ class SettingsPage(QWidget):
         self.shutdown.setChecked(bool(power.get("shutdown_when_done", False)))
         self.autostart.setChecked(autostart.is_enabled())
 
+        sched = raw.get("schedule", {})
+        idx = self.auto_mode.findData(str(sched.get("auto_upload", "off")))
+        self.auto_mode.setCurrentIndex(max(idx, 0))
+        self.auto_time.setTime(_qtime(sched.get("auto_upload_time"), "03:00"))
+        self.auto_hours.setValue(int(sched.get("auto_upload_every_hours", 6)))
+        self.remind.setChecked(bool(sched.get("remind", False)))
+        self.remind_time.setTime(_qtime(sched.get("remind_time"), "20:00"))
+        self.remind_min.setValue(int(sched.get("remind_min_waiting", 1)))
+        self._sync_schedule()
+
+    def _sync_schedule(self) -> None:
+        mode = self.auto_mode.currentData()
+        self.auto_time.setEnabled(mode == "daily")
+        self.auto_hours.setEnabled(mode == "interval")
+        self.remind_time.setEnabled(self.remind.isChecked())
+        self.remind_min.setEnabled(self.remind.isChecked())
+
     def collect(self) -> dict:
         # Start from what was loaded so keys this form doesn't know survive a save.
         data = copy.deepcopy(self._raw)
@@ -578,6 +634,14 @@ class SettingsPage(QWidget):
             "to_addr": self.to_addr.text().strip(),
         })
         data.setdefault("power", {})["shutdown_when_done"] = self.shutdown.isChecked()
+        data.setdefault("schedule", {}).update({
+            "auto_upload": self.auto_mode.currentData(),
+            "auto_upload_time": self.auto_time.time().toString("HH:mm"),
+            "auto_upload_every_hours": self.auto_hours.value(),
+            "remind": self.remind.isChecked(),
+            "remind_time": self.remind_time.time().toString("HH:mm"),
+            "remind_min_waiting": self.remind_min.value(),
+        })
         return data
 
     def _save(self) -> None:

@@ -51,6 +51,21 @@ max_uploads_per_run = 0
 # or 'random'.
 order = 'fewest_remaining'
 
+[schedule]
+# Automatic scan + upload by the desktop app while it runs (open or in the
+# tray - pair it with Start with Windows): 'off', 'daily' (at auto_upload_time)
+# or 'interval' (every auto_upload_every_hours). A daily time missed while the
+# PC was off runs once, a couple of minutes after the app next starts.
+auto_upload = 'off'
+auto_upload_time = '03:00'
+auto_upload_every_hours = 6
+
+# Daily tray notification when at least remind_min_waiting clips are waiting
+# to upload (the app scans the captures folder first; it never uploads here).
+remind = false
+remind_time = '20:00'
+remind_min_waiting = 1
+
 [notify]
 # Send an email summary when a run finishes. Requires GMAIL_APP_PASSWORD in .env.
 enabled = false

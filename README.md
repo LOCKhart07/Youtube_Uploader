@@ -101,6 +101,23 @@ from another folder*, or from the CLI: `python -m ytuploader import <folder>`.
 The installed and portable apps share one single-instance lock: if one is
 running, launching the other just brings the running one to the front.
 
+### Automatic uploads and reminders
+
+Settings → *Automatic uploads and reminders* (the `[schedule]` section of
+`config.toml`), both off by default:
+
+- **Scan + upload** once a day at a set time, or every N hours. Same as clicking
+  *Scan + upload now*; the tray shows "Uploaded N clips" when it finishes.
+- **Reminder**: once a day the app scans the captures folder and, if at least N
+  clips are waiting, shows a tray notification. It doesn't upload anything.
+
+They only run while the app is open or in the tray, so turn on Start with
+Windows. A daily time missed while the PC was off is caught up once, a couple of
+minutes after the app next starts. Turning a rule on or changing it starts from
+now: daily at 03:00 set at 10:00 first runs tomorrow at 03:00. A run that comes
+due during another task waits until it finishes. The tray menu shows the next
+auto-upload time; last-run times are kept in `state.json` in the data folder.
+
 ### Start with Windows
 
 Settings → Windows → *Start with Windows* (applied on Save) adds or removes
@@ -184,6 +201,7 @@ ytuploader/
   notify.py        optional email summary
   migrate.py       import an old data folder into the app's data folder
   autostart.py     Start with Windows (HKCU Run entry)
+  schedule.py      when the tray app auto-uploads / reminds
   service.py       workflows shared by the CLI and the desktop app
   cli.py           command line orchestration
   gui/             PySide6 desktop app (tray, dashboard, settings)

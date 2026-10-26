@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__, autostart, migrate, service
+from ..schedule import Schedule
 from ..config import (
     PORTABLE,
     PROJECT_ROOT,
@@ -44,6 +46,9 @@ from .pages import DashboardPage, SettingsPage, SetupPage, UploadPage
 from .workers import QtEvents, Task
 
 APP_NAME = "YT Capture Uploader"
+# Give Windows login (and Chrome) a moment before a caught-up scheduled run.
+SCHEDULE_START_DELAY_MS = 2 * 60_000
+SCHEDULE_TICK_MS = 60_000
 _INSTANCE_KEY = f"ytuploader-gui-{getpass.getuser()}"
 
 
@@ -59,6 +64,8 @@ class MainWindow(QMainWindow):
         self.events = QtEvents()
         self._quitting = False
         self._told_about_tray = False
+        self.schedule = Schedule()
+        self._message_target = None  # tab a clicked tray message should open
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -79,6 +86,11 @@ class MainWindow(QMainWindow):
         self._build_tray()
         self._wire()
         self.reload_config()
+
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.setInterval(SCHEDULE_TICK_MS)
+        self._schedule_timer.timeout.connect(self.schedule_tick)
+        QTimer.singleShot(SCHEDULE_START_DELAY_MS, self._start_schedule)
 
     # ----------------------------------------------------------------- chrome
 
@@ -113,11 +125,15 @@ class MainWindow(QMainWindow):
         self.tray_stop = menu.addAction("Stop upload", self.do_stop)
         self.tray_stop.setEnabled(False)
         menu.addSeparator()
+        self.tray_next = menu.addAction("")
+        self.tray_next.setEnabled(False)
+        self.tray_next.setVisible(False)
+        menu.addSeparator()
         menu.addAction("Quit", self.quit)
         self.tray.setContextMenu(menu)
         self._tray_menu = menu  # keep a reference; the tray doesn't own it
         self.tray.activated.connect(self._tray_activated)
-        self.tray.messageClicked.connect(self.show_window)
+        self.tray.messageClicked.connect(self._message_clicked)
         self.tray.show()
 
     def _wire(self) -> None:
@@ -145,9 +161,15 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def notify(self, title: str, message: str, warn: bool = False) -> None:
+    def notify(self, title: str, message: str, warn: bool = False, open_tab=None) -> None:
+        self._message_target = open_tab
         icon = QSystemTrayIcon.Warning if warn else QSystemTrayIcon.Information
         self.tray.showMessage(title, message, icon, 8000)
+
+    def _message_clicked(self) -> None:
+        self.show_window()
+        if self._message_target is not None:
+            self.tabs.setCurrentWidget(self._message_target)
 
     # ----------------------------------------------------------------- config
 
@@ -169,6 +191,7 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f"Config: {config_path(self.config_arg)}")
         self.refresh()
+        self._show_next_run()
 
     def refresh(self) -> None:
         if self.cfg:
@@ -345,7 +368,7 @@ class MainWindow(QMainWindow):
 
         self.start_task("Scan", lambda: service.run_scan(cfg, self.events), done)
 
-    def do_upload(self, scan_first: bool = False) -> None:
+    def do_upload(self, scan_first: bool = False, scheduled: bool = False) -> bool:
         cfg = self.cfg
 
         def work() -> service.UploadSummary:
@@ -358,14 +381,64 @@ class MainWindow(QMainWindow):
             text = f"Uploaded {r.uploaded} clip{'s' if r.uploaded != 1 else ''} ({r.reason})."
             self.upload.finished(text)
             if r.uploaded or r.reason != "nothing to upload":
-                self.notify("Upload run finished", text,
-                            warn=r.reason in ("not logged in",))
+                self.notify("Scheduled upload finished" if scheduled else "Upload run finished",
+                            text, warn=r.reason in ("not logged in",), open_tab=self.upload)
 
-        if self.start_task("Scan + upload" if scan_first else "Upload", work, done):
+        started = self.start_task("Scan + upload" if scan_first else "Upload", work, done)
+        if started and not scheduled:
             self.tabs.setCurrentWidget(self.upload)
+        return started
 
     def do_run(self) -> None:
         self.do_upload(scan_first=True)
+
+    # --------------------------------------------------------------- schedule
+
+    def _start_schedule(self) -> None:
+        self._schedule_timer.start()
+        self.schedule_tick()
+
+    def schedule_tick(self) -> None:
+        """Once a minute: start a due auto-upload or reminder check."""
+        self._show_next_run()
+        if self.cfg is None or self.busy:
+            return  # a due run waits for the next tick
+        sched, now = self.cfg.schedule, datetime.now()
+        if self.schedule.upload_due(sched, now):
+            self.upload.append(f"Scheduled scan + upload ({now:%a %H:%M}).")
+            if self.do_upload(scan_first=True, scheduled=True):
+                self.schedule.mark_upload(now)
+                # The run itself scans, so it answers today's reminder too.
+                if self.schedule.reminder_due(sched, now):
+                    self.schedule.mark_reminder(now)
+        elif self.schedule.reminder_due(sched, now):
+            if self._check_waiting(sched.remind_min_waiting):
+                self.schedule.mark_reminder(now)
+        self._show_next_run()
+
+    def _check_waiting(self, minimum: int) -> bool:
+        cfg = self.cfg
+
+        def done(r: service.ScanResult) -> None:
+            if r.remaining >= minimum:
+                self.notify(
+                    APP_NAME,
+                    f"{r.remaining} clip{'s are' if r.remaining != 1 else ' is'} waiting "
+                    "to upload. Click to open, or use Scan + upload in the tray menu.",
+                    open_tab=self.upload,
+                )
+
+        return self.start_task("Check for new clips", lambda: service.run_scan(cfg, self.events),
+                               done)
+
+    def _show_next_run(self) -> None:
+        nxt = self.schedule.next_upload(self.cfg.schedule, datetime.now()) if self.cfg else None
+        if nxt is None:
+            self.tray_next.setVisible(False)
+            return
+        when = "as soon as possible" if nxt <= datetime.now() else _when(nxt)
+        self.tray_next.setText(f"Next auto-upload: {when}")
+        self.tray_next.setVisible(True)
 
     def do_stop(self) -> None:
         if self.busy:
@@ -413,6 +486,15 @@ class MainWindow(QMainWindow):
         self._quitting = True
         self.tray.hide()
         QApplication.quit()
+
+
+def _when(moment: datetime) -> str:
+    today = datetime.now().date()
+    if moment.date() == today:
+        return f"today {moment:%H:%M}"
+    if (moment.date() - today).days == 1:
+        return f"tomorrow {moment:%H:%M}"
+    return f"{moment:%a %d %b %H:%M}"
 
 
 # ---------------------------------------------------------------------- main

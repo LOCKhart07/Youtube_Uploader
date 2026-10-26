@@ -19,6 +19,7 @@ import os
 import sys
 import tomllib
 from dataclasses import dataclass, field
+from datetime import time as dt_time
 from pathlib import Path
 
 try:
@@ -76,6 +77,26 @@ class NotifyConfig:
 
 
 @dataclass(frozen=True)
+class ScheduleConfig:
+    """What the tray app does on its own while it runs (see schedule.py)."""
+    auto_upload: str = "off"           # off / daily / interval
+    auto_upload_time: dt_time = dt_time(3, 0)
+    auto_upload_every_hours: int = 6
+    remind: bool = False
+    remind_time: dt_time = dt_time(20, 0)
+    remind_min_waiting: int = 1
+
+
+def _parse_time(value, key: str) -> dt_time:
+    if isinstance(value, dt_time):  # TOML local-time literal (03:00:00)
+        return value
+    try:
+        return dt_time.fromisoformat(str(value).strip())
+    except ValueError:
+        raise ValueError(f"{key} must be a time like '03:00', got {value!r}") from None
+
+
+@dataclass(frozen=True)
 class Config:
     # paths
     captures_folder: Path
@@ -95,6 +116,8 @@ class Config:
     # notify / power
     notify: NotifyConfig
     shutdown_when_done: bool
+    # tray-app automation
+    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
     @property
     def db_url(self) -> str:
@@ -161,6 +184,22 @@ def config_from_dict(data: dict) -> Config:
     if order not in ("fewest_remaining", "name", "random"):
         raise ValueError(f"order must be fewest_remaining/name/random, got {order!r}")
 
+    sched = data.get("schedule", {})
+    auto_upload = str(sched.get("auto_upload", "off")).lower()
+    if auto_upload not in ("off", "daily", "interval"):
+        raise ValueError(f"auto_upload must be off/daily/interval, got {auto_upload!r}")
+    every_hours = int(sched.get("auto_upload_every_hours", 6))
+    if not 1 <= every_hours <= 168:
+        raise ValueError(f"auto_upload_every_hours must be 1-168, got {every_hours}")
+    schedule = ScheduleConfig(
+        auto_upload=auto_upload,
+        auto_upload_time=_parse_time(sched.get("auto_upload_time", "03:00"), "auto_upload_time"),
+        auto_upload_every_hours=every_hours,
+        remind=bool(sched.get("remind", False)),
+        remind_time=_parse_time(sched.get("remind_time", "20:00"), "remind_time"),
+        remind_min_waiting=max(1, int(sched.get("remind_min_waiting", 1))),
+    )
+
     return Config(
         captures_folder=_resolve(paths.get("captures_folder", "captures")),
         db_path=_resolve(paths.get("db_path", "uploads.db")),
@@ -183,12 +222,13 @@ def config_from_dict(data: dict) -> Config:
             password=os.environ.get("GMAIL_APP_PASSWORD", ""),
         ),
         shutdown_when_done=bool(power.get("shutdown_when_done", False)),
+        schedule=schedule,
     )
 
 
 # ------------------------------------------------------------------ writing
 
-_SECTION_ORDER = ("paths", "scan", "upload", "notify", "power")
+_SECTION_ORDER = ("paths", "scan", "upload", "schedule", "notify", "power")
 
 
 def _toml_value(value) -> str:
