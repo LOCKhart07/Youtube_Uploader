@@ -6,4 +6,4 @@ A modern rewrite of the old selenium_youtube hybrid:
   * progress is tracked in a local SQLite DB so nothing uploads twice.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
