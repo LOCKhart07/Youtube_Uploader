@@ -72,6 +72,13 @@ The installer is per-user, needs no admin rights, and installs to
 desktop shortcut and an optional **Start with Windows** entry. Uninstall from
 Settings → Apps; it asks before deleting your data (default: keep it).
 
+**Releases:** publishing a GitHub release runs `.github/workflows/release.yml`,
+which builds `ytuploader-setup-<version>.exe` and the single-file
+`ytuploader-<version>.exe` on a Windows runner and attaches both to the release.
+The tag must match `ytuploader.__version__` (`1.2.0` or `v1.2.0`), so bump
+`ytuploader/__init__.py` first. It can also be run by hand from the Actions tab,
+which leaves the files as a workflow artifact.
+
 ### Where the data lives
 
 - **Installed app:** `%LOCALAPPDATA%\ytuploader` — `config.toml`, the history DB
