@@ -124,6 +124,8 @@ class UploadSession:
         )
         self._context.set_default_timeout(self.timeout_ms)
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
+        if self.headless:
+            self._mask_headless_user_agent()
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -143,6 +145,22 @@ class UploadSession:
                     pass
 
     # ------------------------------------------------------------------ helpers
+
+    def _mask_headless_user_agent(self) -> None:
+        """Drop the "Headless" token from the user agent.
+
+        Headless Chrome reports itself as "HeadlessChrome", and Studio answers
+        that with an "unsupported browser" page that has no upload form. The
+        real version is only known once the browser is up, so it is patched
+        here through CDP rather than with the launch-time `user_agent` option.
+        """
+        user_agent = self._page.evaluate("navigator.userAgent")
+        if "HeadlessChrome" in user_agent:
+            cdp = self._context.new_cdp_session(self._page)
+            cdp.send(
+                "Network.setUserAgentOverride",
+                {"userAgent": user_agent.replace("HeadlessChrome", "Chrome")},
+            )
 
     def _save_screenshot(self, name: str) -> Path | None:
         try:
